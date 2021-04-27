@@ -1,0 +1,153 @@
+---
+title: "Reglas de asociación con Titanic"
+always_allow_html: true
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+  html_document:
+    code_folding: show
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(arules)          # install.packages("arules")
+library(funModeling)     # install.packages("funModeling")
+```
+
+Preprocesamiento de datos con el dataset [titanic](https://www.kaggle.com/c/titanic/).
+
+> El hundimiento del Titanic es una de las tragedias marítimas más conocidas de la historia. El 15 de abril de 1912, durante su viaje inaugural, el Titanic se hundió después de chocar contra un iceberg. En el accidente murieron 1502 personas de las 2224 que habían embarcado, inluyendo pasajeros y tripulación. Una de las razones por las que no se encontraron más supervivientes fue la falta de espacio en los barcos salvavidas. Así, aunque la suerte sin duda sonrió a los supervivientes, también resultaron más favorecidos algunos grupos de personas, como las mujeres, los niños y los pasajeros de la clase superior.
+
+**En este problema analizaremos qué tipos de personas tuvieron más probabilidades de sobrevivir. Para ello, aplicaremos extracción de reglas de asociación que nos permitirán conocer las características de los pasajeros sobrevivieron al hundimiento.**
+
+# Lectura y preprocesamiento de los datos
+
+## Carga de datos
+
+Comenzaremos utilizando el fichero [*titanic*](https://www.kaggle.com/c/titanic/data) de Kaggle, donde encontramos los datos de 891 pasajeros y que utilizaremos para extraer reglas.
+
+Para lectura de datos, utilizaremos alguna de las variantes de la función [<tt>read</tt>](http://r4ds.had.co.nz/data-import.html). A continuación, podemos inspeccionar el contenido de la tabla de datos, que se almacena en formato [<tt>tibble</tt>](http://r4ds.had.co.nz/tibbles.html).
+
+```{r}
+datos <- read_csv('titanic.csv')
+datos
+```
+
+## Estado de los datos
+
+Podemos identificar los valores perdidos de la tabla utilizando `df_status()`, del paquete [<tt>funModeling</tt>](https://livebook.datascienceheroes.com/exploratory-data-analysis.html#dataset-health-status).
+
+```{r}
+df_status(datos)
+```
+
+Algunas observaciones interesantes:
+
+-   Los valores de *PassengerId* y *Name* son únicos
+-   Existen dos valores diferentes para *Survived*
+-   No sobrevivieron 549 pasajeros (61.62%)
+-   Aparecen numerosos valores perdidos (*na*) en las variables *Age* y *Cabin*
+-   La mayor parte de los atributos son numéricos
+
+## Selección de variables y valores perdidos
+
+Para realizar nuestro análisis no necesitamos todas las variables; nos interesan solamente varias de ellas que *sospechamos* que pueden ser de utilidad:
+
+-   `Pclass`: clase del barco en que viajaba el pasajero (1, 2, 3)
+-   `Age`: edad del pasajero (0, 100)
+-   `Sex`: sexo del pasajero (male, female)
+-   `Survived`: sobrevivió o no (1, 0)
+
+Por lo tanto, podemos seleccionar solo las que nos interesan:
+
+```{r}
+datos_seleccion <- datos %>%
+  select(Pclass, Age, Sex, Survived)
+datos_seleccion
+```
+
+Podemos obviar las filas que contienen valores perdidos con `drop_na()`. También podrían aplicarse otros procedimientos más sofisticados para tratar con esos valores perdidos (ver paquete [`mice`](https://cran.r-project.org/web/packages/mice/index.html).
+
+```{r}
+datos_seleccion <- datos_seleccion %>%
+  drop_na()
+datos_seleccion
+```
+
+## Recodificación y discretización de variables
+
+Para trabajar con reglas de asociación, necesitamos que las variables del problema sean de tipo cuantitativo. Por lo tanto, necesitamos ajustar los valores de `Pclass`, `Age` y `Survived`.
+
+Para `Pclass`, únicamente vamos a recodificar los valores usando `mutate()` y la instrucción condicional [`ifelse()`](https://dplyr.tidyverse.org/reference/if_else.html):
+
+```{r}
+# Survived
+datos_cuantitativos <- datos_seleccion %>%
+  mutate(Survived = ifelse(Survived == 0, "no", "yes"))
+```
+
+Para `Age` y `Survived`, el procedimiento es similar, usando condicionales más complejos como [`case_when()`](https://dplyr.tidyverse.org/reference/case_when.html):
+
+```{r}
+# Pclass
+datos_cuantitativos <- datos_cuantitativos %>%
+  mutate(Pclass = case_when(
+    Pclass == 1 ~ '1st',
+    Pclass == 2 ~ '2nd',
+    Pclass == 3 ~ '3rd')
+  )
+
+# Age
+datos_cuantitativos <- datos_cuantitativos %>%
+  mutate(Age = case_when(
+    Age >= 18 ~ 'adult',
+    TRUE ~ 'child')
+  )
+
+datos_cuantitativos
+```
+
+## Transformación a formato transaccional
+
+Para ejecutar el algoritmos Apriori necesitamos convertir nuestra tabla a formato transaccional. En este problema, los ítems serán las características de los individuos expresadas en formato `<atributo=valor>`. Por ejemplo, la transacción correspondiente al primer individuo será:
+
+`<Pclass=3rd>, <Age=adult>, <Sex=male>, <Survived=no>`
+
+Para ello, necesitamos primero pasar todas las columnas a tipo de dato `factor`:
+```{r}
+datos_cuantitativos <- datos_cuantitativos %>%
+  mutate_all(as.factor)
+datos_cuantitativos
+```
+
+Y, a continuación, convertir a `"transactions"` con la función `as()`:
+```{r}
+datost <- as(datos_cuantitativos, "transactions")
+datost
+inspect(datost)
+
+itemFrequencyPlot(datost, type="relative", main="Recuento de ítems")
+```
+
+# Ejercicios
+
+1. Obtén los itemsets frecuentes de los datos.
+
+2. Ejecuta el proceso de extracción de reglas usando:
+  - Soporte: 1%, Confianza: 70%
+  - Soporte: 1%, Confianza: 85%
+
+3. Visualiza una selección de las 20 reglas con mayor soporte.
+
+4. Comenta varias reglas obtenidas que te parezcan interesantes en términos de _lift_.
+  
+5. Extrae reglas que se refieran solamente a pasajeros adultos. ¿Qué pasaría si, en lugar de aplicar las instrucciones de <tt>cesta.Rmd</tt>, hiciéramos un `filter(Age <= 10)` sobre `datos_cuantitativos` para quitar los pasajeros menores de edad?  
+
+

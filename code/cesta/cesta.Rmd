@@ -1,0 +1,246 @@
+---
+title: "Ejemplo de reglas de asociación"
+always_allow_html: true
+output:
+  html_document:
+    code_folding: show
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    df_print: paged
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+---
+
+**En este cuaderno mostraremos un ejemplo sencillo de extracción de reglas de asociación con el conjunto de datos de las cestas de la compra, utilizado en las diapositivas de la asignatura.**
+
+Nos basaremos en las funcionalidades proporcionadas por el paquete [`arules()`](https://cran.r-project.org/web/packages/arules/index.html).
+
+```{r configuracion, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(arules)     # install.packages("arules")
+```
+
+En primer lugar, asignamos una constante para el nombre del fichero:
+
+```{r constantes}
+fichero <- "cesta.csv"
+```
+
+# Lectura de datos
+
+Los datos del fichero `r fichero` se presentan en forma de transacciones, como se puede ver:
+
+```{r mostrar-fichero}
+readLines(fichero) %>% paste0(collapse="\n") %>% cat
+```
+
+[`arules()`](https://cran.r-project.org/web/packages/arules/index.html) ofrece la función [`read.transactions()`](https://www.rdocumentation.org/packages/arules/versions/1.6-7/topics/read.transactions) para lectura de ficheros con transacciones:
+
+```{r leer-transacciones}
+datost <- read.transactions(fichero, sep=",", header = TRUE)
+```
+
+Podemos obtener un resumen de las transacciones con `summary()` o `inspect()`:
+
+```{r resumen-transacciones}
+summary(datost)
+inspect(datost)
+```
+
+Gráficamente, podemos ver los ítems frecuentes de las transacciones:
+
+```{r ver-items}
+itemFrequencyPlot(datost, type="relative", main="Recuento de ítems")
+```
+
+# Listado de transacciones
+
+Para ver y operar con las las transacciones, convertimos `datost` a una lista con [`LIST()`](https://www.rdocumentation.org/packages/arules/versions/1.6-7/topics/LIST):
+
+```{r listar-transacciones}
+listat <- LIST(datost)
+listat
+```
+
+Si solo queremos trabajar con un subconjunto de transacciones, podemos hacer una sublista:
+
+```{r seleccionar-transacciones}
+print("Transacción número 5: ")
+listat[[5]]
+
+print("Transacciones 1, 3, 5")
+listat[c(1, 3, 5)]
+```
+
+Y seleccionar basándonos en criterios más complejos con `which()` y [`grepl()`](https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/grep):
+
+```{r seleccionar-transacciones-complejas}
+con_pan <- which(grepl("pan", listat))
+print("Transacciones que incluyen pan")
+listat[con_pan]
+
+con_pan_y_leche <- which(grepl("pan", listat) & grepl("leche", listat))
+print("Transacciones que incluyen pan y leche")
+listat[con_pan_y_leche]
+```
+
+# Itemsets frecuentes
+
+Para obtener los itemsets frecuentes, usamos la función [`apriori()`](https://www.rdocumentation.org/packages/arules/versions/1.6-7/topics/apriori) con el `target="frequent itemsets"`:
+
+```{r itemsets-frecuentes}
+minSup <- 3/length(listat)
+
+itemsetsFrecuentes <- apriori(datost, parameter = list(support = minSup, target = "frequent itemsets"))
+
+inspect(itemsetsFrecuentes)[c(1, 2, 4)]
+```
+
+# Extracción de reglas
+
+## Extracción general
+
+Para obtener las reglas de asociación, lanzamos [`apriori()`](https://www.rdocumentation.org/packages/arules/versions/1.6-7/topics/apriori) cambiando el `target` a `rules`:
+
+```{r extraer-reglas}
+minSup  <- 3/length(listat)
+minConf <- 0.75
+
+reglas <- apriori(datost, 
+                  parameter = list(support = minSup, 
+                                   confidence = minConf, 
+                                   target = "rules", 
+                                   minlen = 2, 
+                                   maxlen = 5))
+summary(reglas)
+```
+
+# Visualización de reglas
+
+## Formato de tabla
+
+Para mostrar las reglas en forma de tabla usamos `inspect()`:
+
+```{r mostrar-reglas}
+inspect(reglas)
+```
+
+El paquete `dplyr` no se lleva bien con las columnas sin nombre, por lo que lo primero que haremos es renombrar la columna 2 (la implicación):
+
+```{r renombrar-columna-vacia}
+reglas_df <- inspect(reglas) %>%
+  rename("implies" = 2)
+```
+
+Ahora ya podemos manipular la tabla con instrucciones `filter()` y búsqueda de texto con `grepl()`:
+
+```{r filtrar-reglas}
+# reglas con alto soporte
+reglas_frecuentes <- reglas_df %>%
+  filter(support > 0.6)
+reglas_frecuentes
+
+# reglas con alta confianza
+reglas_confianza <- reglas_df %>%
+  filter(confidence > 0.8)
+reglas_confianza
+
+# reglas con un item determinado en el consecuente
+reglas_pan <- reglas_df %>%
+  filter(grepl("pan", rhs))
+reglas_pan
+
+# reglas con algún item determinado en el antecedente
+reglas_panOleche <- reglas_df %>%
+  filter(grepl("pan", lhs) | grepl("leche", lhs))
+reglas_panOleche
+
+# reglas con un itemset determinado en el antecedente
+reglas_panYleche <- reglas_df %>%
+  filter(grepl("pan", lhs) & grepl("leche", lhs))
+reglas_panYleche
+```
+
+También podemos ordenar la tabla de reglas con `arrange()`:
+
+```{r ordenar-reglas}
+reglas_ordenadas_confianza <- reglas_df %>%
+  arrange(desc(confidence))
+reglas_ordenadas_confianza
+```
+
+## Formato visual
+
+El paquete [`arulesViz`](https://cran.r-project.org/web/packages/arulesViz/index.html) incluye varias funcionalidades para la visualización de reglas de asociación.
+
+La más directa es [`plot()`](https://www.rdocumentation.org/packages/arulesViz/versions/1.1-1/topics/plot), que muestra las reglas obtenidas sobre un diagrama de dispersión con x=soporte, y=confianza.
+
+```{r visualizar-reglas}
+library(arulesViz)   # install.packages("arulesViz")
+plot(reglas)
+```
+
+[`plot()`](https://www.rdocumentation.org/packages/arulesViz/versions/1.1-1/topics/plot) ofrece varios parámetros para modificar la visualización y el tipo de gráfico generado. Por ejemplo, para formato de coordenadas paralelas:
+
+```{r visualizar-reglas-matriz}
+plot(reglas, method="paracoord")    # method="two-key plot"
+```
+
+Podemos ver las reglas en formato de grafo. Los nodos del grafo representan reglas (círculos) e ítems (etiquetas de texto); los arcos del grafo representan participación en la regla (antecedente o consecuente, según la dirección del arco).
+
+```{r visualizar-reglas-grafo}
+plot(reglas, method="graph")
+```
+
+Estos gráficos se pueden hacer interactivos añadiendo el motor HTML para renderizado con `engine = "htmlwidget"`:
+
+```{r visualizar-reglas-interactivo}
+plot(reglas, method="graph", engine = "htmlwidget")
+```
+
+Los grafos de reglas pueden exportarse con [`saveAsGraph()`](https://www.rdocumentation.org/packages/arulesViz/versions/1.4-0/topics/saveAsGraph) a formato *graphml* , que puede ser leído desde [Gephi](https://gephi.org/):
+
+```{r exportar-grafo}
+saveAsGraph(reglas, file = "reglas.graphml")
+```
+
+# Extensiones del algoritmo de generación
+
+## Extracción centrada en ciertos ítems
+
+Podemos limitar la ejecución del algoritmo para que solo se tengan en cuenta ciertos ítems en el antecedente o el consecuente de las reglas mediante el parámetro `appearance`. En este ejemplo, generamos reglas con leche en el consecuente:
+
+```{r reglas-subconjunto}
+reglas_leche <- apriori(datost, 
+                        parameter = list(support=0.5, confidence=0.5, minlen=2), 
+                        appearance = list(default="lhs", rhs="leche"))
+inspect(reglas_leche)
+```
+
+Los resultados son los mismos que si generamos todas las reglas y después filtramos por ítem, aunque el procedimiento es más rápido.
+
+## Eliminado de reglas más amplias que otras
+
+Puede ocurrir que aparezcan reglas que están incluidas dentro de otras reglas. Para identificarlas, usamos la función [`is.subset()`](https://www.rdocumentation.org/packages/arules/versions/1.6-7/topics/is.superset):
+
+```{r visualizar-redundantes}
+is.subset(reglas, reglas)
+```
+
+Si queremos eliminarlas, podemos ver qué reglas tienen un recuento de "inclusión" mayor que 1:
+
+```{r calcular-redundantes}
+ya_incluidas <- which(colSums(is.subset(reglas, reglas)) > 1) 
+ya_incluidas
+```
+
+Y, a continuación, eliminarlas:
+
+```{r eliminar-redundantes}
+reglas_no_incluidas <- reglas[-ya_incluidas]
+inspect(reglas_no_incluidas)
+```
