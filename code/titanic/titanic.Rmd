@@ -37,7 +37,7 @@ Para lectura de datos, utilizaremos alguna de las variantes de la función [<tt>
 
 ```{r}
 datos <- read_csv('titanic.csv')
-datos
+head(datos)
 ```
 
 ## Estado de los datos
@@ -70,7 +70,7 @@ Por lo tanto, podemos seleccionar solo las que nos interesan:
 ```{r}
 datos_seleccion <- datos %>%
   select(Pclass, Age, Sex, Survived)
-datos_seleccion
+head(datos_seleccion)
 ```
 
 Podemos obviar las filas que contienen valores perdidos con `drop_na()`. También podrían aplicarse otros procedimientos más sofisticados para tratar con esos valores perdidos (ver paquete [`mice`](https://cran.r-project.org/web/packages/mice/index.html).
@@ -78,7 +78,7 @@ Podemos obviar las filas que contienen valores perdidos con `drop_na()`. Tambié
 ```{r}
 datos_seleccion <- datos_seleccion %>%
   drop_na()
-datos_seleccion
+head(datos_seleccion)
 ```
 
 ## Recodificación y discretización de variables
@@ -111,7 +111,7 @@ datos_cuantitativos <- datos_cuantitativos %>%
     TRUE ~ 'child')
   )
 
-datos_cuantitativos
+head(datos_cuantitativos)
 ```
 
 ## Transformación a formato transaccional
@@ -124,14 +124,14 @@ Para ello, necesitamos primero pasar todas las columnas a tipo de dato `factor`:
 ```{r}
 datos_cuantitativos <- datos_cuantitativos %>%
   mutate_all(as.factor)
-datos_cuantitativos
+head(datos_cuantitativos)
 ```
 
 Y, a continuación, convertir a `"transactions"` con la función `as()`:
 ```{r}
 datost <- as(datos_cuantitativos, "transactions")
 datost
-inspect(datost)
+# inspect(datost)
 
 itemFrequencyPlot(datost, type="relative", main="Recuento de ítems")
 ```
